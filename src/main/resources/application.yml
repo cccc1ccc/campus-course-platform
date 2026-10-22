@@ -36,3 +36,8 @@ spring:
 logging:
   level:
     com.campus.course: debug
+
+# JWT 配置
+jwt:
+  secret: campus-course-platform-secret-key-must-be-long-enough-32bytes
+  expiration: 86400000

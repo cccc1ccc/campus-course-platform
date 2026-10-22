@@ -1,5 +1,7 @@
 package com.campus.course.service.impl;
 
+import com.campus.course.common.BizException;
+import com.campus.course.common.ErrorCode;
 import com.campus.course.model.entity.Notification;
 import com.campus.course.repository.NotificationRepository;
 import com.campus.course.service.NotificationService;
@@ -29,9 +31,9 @@ public class NotificationServiceImpl implements NotificationService {
     @Transactional
     public void markRead(Long notifyId, Long userId) {
         Notification n = notifyRepo.findById(notifyId)
-                .orElseThrow(() -> new RuntimeException("通知不存在"));
+                .orElseThrow(() -> new BizException(ErrorCode.NOTIFICATION_NOT_FOUND));
         if (!n.getUserId().equals(userId)) {
-            throw new RuntimeException("无权操作此通知");
+            throw new BizException(ErrorCode.NOTIFICATION_NOT_OWNED);
         }
         n.setIsRead(true);
         notifyRepo.save(n);

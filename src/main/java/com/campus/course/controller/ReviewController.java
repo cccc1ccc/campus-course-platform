@@ -3,6 +3,7 @@ package com.campus.course.controller;
 import com.campus.course.common.Result;
 import com.campus.course.dto.ReviewCreateDTO;
 import com.campus.course.model.entity.Review;
+import com.campus.course.security.SecurityUtils;
 import com.campus.course.service.ReviewService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -21,9 +22,8 @@ public class ReviewController {
 
     /** 提交评价 */
     @PostMapping
-    public Result<Review> create(@RequestHeader("X-User-Id") Long userId,
-                                 @Validated @RequestBody ReviewCreateDTO dto) {
-        return Result.success(reviewService.createReview(userId, dto));
+    public Result<Review> create(@Validated @RequestBody ReviewCreateDTO dto) {
+        return Result.success(reviewService.createReview(SecurityUtils.currentUserId(), dto));
     }
 
     /** 查看某用户的评价 */

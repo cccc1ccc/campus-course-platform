@@ -25,7 +25,7 @@ public class User {
     @Column(nullable = false, unique = true, length = 50)
     private String username;
 
-    /** 密码（实际项目应加密存储） */
+    /** 密码（BCrypt 加密存储） */
     @Column(nullable = false)
     private String password;
 

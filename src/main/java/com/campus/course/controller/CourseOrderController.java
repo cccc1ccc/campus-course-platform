@@ -4,6 +4,7 @@ import com.campus.course.common.Result;
 import com.campus.course.dto.CourseOrderCreateDTO;
 import com.campus.course.model.entity.CourseOrder;
 import com.campus.course.model.enum_.OrderStatus;
+import com.campus.course.security.SecurityUtils;
 import com.campus.course.service.CourseOrderService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -25,37 +26,32 @@ public class CourseOrderController {
 
     /** 发布代课需求 */
     @PostMapping
-    public Result<CourseOrder> publish(@RequestHeader("X-User-Id") Long userId,
-                                      @Validated @RequestBody CourseOrderCreateDTO dto) {
-        return Result.success(orderService.publishOrder(userId, dto));
+    public Result<CourseOrder> publish(@Validated @RequestBody CourseOrderCreateDTO dto) {
+        return Result.success(orderService.publishOrder(SecurityUtils.currentUserId(), dto));
     }
 
     /** 接单 */
     @PutMapping("/{id}/take")
-    public Result<CourseOrder> take(@PathVariable Long id,
-                                    @RequestHeader("X-User-Id") Long userId) {
-        return Result.success(orderService.takeOrder(id, userId));
+    public Result<CourseOrder> take(@PathVariable Long id) {
+        return Result.success(orderService.takeOrder(id, SecurityUtils.currentUserId()));
     }
 
     /** 开始代课 */
     @PutMapping("/{id}/start")
-    public Result<CourseOrder> start(@PathVariable Long id,
-                                     @RequestHeader("X-User-Id") Long userId) {
-        return Result.success(orderService.startOrder(id, userId));
+    public Result<CourseOrder> start(@PathVariable Long id) {
+        return Result.success(orderService.startOrder(id, SecurityUtils.currentUserId()));
     }
 
     /** 完成代课 */
     @PutMapping("/{id}/complete")
-    public Result<CourseOrder> complete(@PathVariable Long id,
-                                        @RequestHeader("X-User-Id") Long userId) {
-        return Result.success(orderService.completeOrder(id, userId));
+    public Result<CourseOrder> complete(@PathVariable Long id) {
+        return Result.success(orderService.completeOrder(id, SecurityUtils.currentUserId()));
     }
 
     /** 取消订单 */
     @PutMapping("/{id}/cancel")
-    public Result<CourseOrder> cancel(@PathVariable Long id,
-                                      @RequestHeader("X-User-Id") Long userId) {
-        return Result.success(orderService.cancelOrder(id, userId));
+    public Result<CourseOrder> cancel(@PathVariable Long id) {
+        return Result.success(orderService.cancelOrder(id, SecurityUtils.currentUserId()));
     }
 
     /** 按状态查询订单列表 */
@@ -79,19 +75,17 @@ public class CourseOrderController {
     /** 我发布的订单 */
     @GetMapping("/published")
     public Result<Page<CourseOrder>> myPublished(
-            @RequestHeader("X-User-Id") Long userId,
             @RequestParam(defaultValue = "1") int pageNum,
             @RequestParam(defaultValue = "10") int pageSize) {
-        return Result.success(orderService.listByPublisher(userId, pageNum, pageSize));
+        return Result.success(orderService.listByPublisher(SecurityUtils.currentUserId(), pageNum, pageSize));
     }
 
     /** 我接的订单 */
     @GetMapping("/taken")
     public Result<Page<CourseOrder>> myTaken(
-            @RequestHeader("X-User-Id") Long userId,
             @RequestParam(defaultValue = "1") int pageNum,
             @RequestParam(defaultValue = "10") int pageSize) {
-        return Result.success(orderService.listByTaker(userId, pageNum, pageSize));
+        return Result.success(orderService.listByTaker(SecurityUtils.currentUserId(), pageNum, pageSize));
     }
 
     /** 订单详情 */

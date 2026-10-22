@@ -61,6 +61,11 @@ public class CourseOrder {
     @Column(nullable = false, length = 20)
     private OrderStatus status;
 
+    /** 乐观锁版本号（防止并发接单） */
+    @Version
+    @Column(nullable = false)
+    private Long version;
+
     @CreationTimestamp
     @Column(name = "create_time", updatable = false)
     private LocalDateTime createTime;

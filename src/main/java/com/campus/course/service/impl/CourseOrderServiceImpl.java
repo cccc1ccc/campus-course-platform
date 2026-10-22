@@ -1,5 +1,7 @@
 package com.campus.course.service.impl;
 
+import com.campus.course.common.BizException;
+import com.campus.course.common.ErrorCode;
 import com.campus.course.dto.CourseOrderCreateDTO;
 import com.campus.course.model.entity.CourseOrder;
 import com.campus.course.model.entity.Notification;
@@ -45,7 +47,7 @@ public class CourseOrderServiceImpl implements CourseOrderService {
     @Transactional
     public CourseOrder publishOrder(Long publisherId, CourseOrderCreateDTO dto) {
         User publisher = userRepo.findById(publisherId)
-                .orElseThrow(() -> new RuntimeException("用户不存在"));
+                .orElseThrow(() -> new BizException(ErrorCode.USER_NOT_FOUND));
 
         CourseOrder order = CourseOrder.builder()
                 .publisherId(publisherId)
@@ -74,20 +76,25 @@ public class CourseOrderServiceImpl implements CourseOrderService {
     @Override
     @Transactional
     public CourseOrder takeOrder(Long orderId, Long takerId) {
-        CourseOrder order = getOrderAndValidate(orderId, OrderStatus.PUBLISHED);
+        CourseOrder order = orderRepo.findById(orderId)
+                .orElseThrow(() -> new BizException(ErrorCode.ORDER_NOT_FOUND));
 
         // 不能接自己发布的单
         if (order.getPublisherId().equals(takerId)) {
-            throw new RuntimeException("不能接自己发布的代课需求");
+            throw new BizException(ErrorCode.CANNOT_TAKE_OWN_ORDER);
         }
 
-        order.setTakerId(takerId);
-        order.setStatus(OrderStatus.TAKEN);
-        order = orderRepo.save(order);
+        // 原子抢单：仅当状态仍为 PUBLISHED 时才更新，避免并发下多人同时接单成功
+        int updated = orderRepo.takeOrderAtomically(orderId, takerId,
+                OrderStatus.PUBLISHED, OrderStatus.TAKEN);
+        if (updated == 0) {
+            throw new BizException(ErrorCode.ORDER_ALREADY_TAKEN,
+                    "订单已被接单或已取消");
+        }
 
         // 更新接单次数
         User taker = userRepo.findById(takerId)
-                .orElseThrow(() -> new RuntimeException("接单用户不存在"));
+                .orElseThrow(() -> new BizException(ErrorCode.USER_NOT_FOUND));
         taker.setTakeCount(taker.getTakeCount() + 1);
         userRepo.save(taker);
 
@@ -96,6 +103,8 @@ public class CourseOrderServiceImpl implements CourseOrderService {
                 "课程【" + order.getCourseName() + "】已有人接单，请留意上课安排。", orderId);
 
         log.info("用户[{}]接单[{}]", takerId, orderId);
+        order.setTakerId(takerId);
+        order.setStatus(OrderStatus.TAKEN);
         return order;
     }
 
@@ -133,16 +142,17 @@ public class CourseOrderServiceImpl implements CourseOrderService {
     @Transactional
     public CourseOrder cancelOrder(Long orderId, Long operatorId) {
         CourseOrder order = orderRepo.findById(orderId)
-                .orElseThrow(() -> new RuntimeException("订单不存在"));
+                .orElseThrow(() -> new BizException(ErrorCode.ORDER_NOT_FOUND));
 
         if (order.getStatus() != OrderStatus.PUBLISHED && order.getStatus() != OrderStatus.TAKEN) {
-            throw new RuntimeException("当前状态【" + order.getStatus().getDesc() + "】不可取消");
+            throw new BizException(ErrorCode.ORDER_NOT_CANCELLABLE,
+                    "当前状态【" + order.getStatus().getDesc() + "】不可取消");
         }
 
         // 只有发布者或接单者可取消
         if (!order.getPublisherId().equals(operatorId) &&
             (order.getTakerId() == null || !order.getTakerId().equals(operatorId))) {
-            throw new RuntimeException("无权取消此订单");
+            throw new BizException(ErrorCode.ORDER_NOT_OPERABLE, "无权取消此订单");
         }
 
         order.setStatus(OrderStatus.CANCELLED);
@@ -186,7 +196,7 @@ public class CourseOrderServiceImpl implements CourseOrderService {
     @Override
     public CourseOrder getOrder(Long orderId) {
         return orderRepo.findById(orderId)
-                .orElseThrow(() -> new RuntimeException("订单不存在"));
+                .orElseThrow(() -> new BizException(ErrorCode.ORDER_NOT_FOUND));
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -237,10 +247,10 @@ public class CourseOrderServiceImpl implements CourseOrderService {
     /** 获取订单并验证当前状态 */
     private CourseOrder getOrderAndValidate(Long orderId, OrderStatus expected) {
         CourseOrder order = orderRepo.findById(orderId)
-                .orElseThrow(() -> new RuntimeException("订单不存在"));
+                .orElseThrow(() -> new BizException(ErrorCode.ORDER_NOT_FOUND));
         if (order.getStatus() != expected) {
-            throw new RuntimeException("订单状态异常：当前为【" + order.getStatus().getDesc() +
-                    "】，期望【" + expected.getDesc() + "】");
+            throw new BizException(ErrorCode.ORDER_STATUS_ERROR,
+                    "当前为【" + order.getStatus().getDesc() + "】，期望【" + expected.getDesc() + "】");
         }
         return order;
     }
@@ -248,7 +258,7 @@ public class CourseOrderServiceImpl implements CourseOrderService {
     /** 验证操作者是接单人 */
     private void validateTaker(CourseOrder order, Long takerId) {
         if (!takerId.equals(order.getTakerId())) {
-            throw new RuntimeException("无权操作此订单");
+            throw new BizException(ErrorCode.ORDER_NOT_OPERABLE);
         }
     }
 

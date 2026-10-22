@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS `course_order` (
     `reward`          DECIMAL(10,2) DEFAULT NULL COMMENT '报酬',
     `description`     TEXT          DEFAULT NULL COMMENT '详细描述',
     `status`          VARCHAR(20)  NOT NULL DEFAULT 'PUBLISHED' COMMENT '订单状态',
+    `version`         BIGINT       NOT NULL DEFAULT 0 COMMENT '乐观锁版本号',
     `create_time`     DATETIME      DEFAULT CURRENT_TIMESTAMP,
     `update_time`     DATETIME      DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
@@ -74,10 +75,11 @@ CREATE TABLE IF NOT EXISTS `notification` (
 --  示例数据
 -- ═══════════════════════════════════════════════════════════════
 
+-- 密码均为 123456（BCrypt 加密存储，示例）
 INSERT INTO `user` (`username`, `password`, `phone`) VALUES
-('zhangsan', '123456', '13800001111'),
-('lisi',     '123456', '13800002222'),
-('wangwu',   '123456', '13800003333');
+('zhangsan', '$2b$10$x/O4svoo6LFiJ3bxk79BkusR76XuMRUo8PFzxH3qF6T.EfsO0pWYq', '13800001111'),
+('lisi',     '$2b$10$Mw0o9qjU4fTbanFXYeOGAehQfywQ8..ueEj4OsdAAzv3v3vI/UmFO', '13800002222'),
+('wangwu',   '$2b$10$PRIwAf.tW/SmthVFgJMPSus6ZKI.fnEg87rRvhWDbqQCwX/bgbQVa', '13800003333');
 
 INSERT INTO `course_order` (`publisher_id`, `course_name`, `course_code`, `class_time`, `class_location`, `reward`, `description`, `status`) VALUES
 (1, '高等数学A', 'MATH1001', '周一 3-4节', '教学楼A301', 50.00, '本周一3-4节高数课需要代课，有笔记报酬', 'PUBLISHED'),

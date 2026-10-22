@@ -11,6 +11,7 @@
 | 层级 | 技术 |
 |------|------|
 | 后端框架 | Spring Boot 2.7 |
+| 安全 | Spring Security + JWT + BCrypt |
 | ORM | Spring Data JPA + Hibernate |
 | 数据库 | MySQL 8.0 |
 | 缓存 | Redis + Lettuce |
@@ -47,6 +48,15 @@ PUBLISHED → TAKEN → IN_PROGRESS → COMPLETED → REVIEWED
 - 结果缓存至 Redis，TTL 2 小时
 - 发布新订单时自动失效缓存
 
+### 6. 认证与安全
+- 用户注册 / 登录，密码 BCrypt 加密存储
+- JWT 无状态鉴权，所有业务接口需携带 `Authorization: Bearer <token>`
+- 从 SecurityContext 取当前用户，杜绝伪造用户 ID
+
+### 7. 并发保护
+- 订单实体使用 `@Version` 乐观锁
+- 接单通过原子条件更新（仅 `PUBLISHED` 状态可接），防止并发下多人抢单成功
+
 ## 项目结构
 
 ```
@@ -59,44 +69,61 @@ campus-course-platform/
 │   │   └── GlobalExceptionHandler.java   # 全局异常处理
 │   ├── common/
 │   │   ├── Result.java                   # 统一响应封装
-│   │   └── PageRequest.java              # 分页参数
+│   │   ├── PageRequest.java              # 分页参数
+│   │   ├── ErrorCode.java                # 业务错误码枚举
+│   │   └── BizException.java             # 业务异常
+│   ├── security/
+│   │   ├── SecurityConfig.java           # Spring Security 配置
+│   │   ├── JwtUtil.java                  # JWT 生成/解析
+│   │   ├── JwtAuthFilter.java            # JWT 鉴权过滤器
+│   │   └── SecurityUtils.java            # 当前登录用户工具
 │   ├── model/
 │   │   ├── entity/
 │   │   │   ├── User.java                 # 用户实体
-│   │   │   ├── CourseOrder.java           # 代课订单实体
+│   │   │   ├── CourseOrder.java           # 代课订单实体（含乐观锁 version）
 │   │   │   ├── Review.java               # 评价实体
 │   │   │   └── Notification.java          # 通知实体
 │   │   └── enum_/
 │   │       └── OrderStatus.java          # 订单状态枚举
 │   ├── dto/
 │   │   ├── CourseOrderCreateDTO.java     # 发布订单请求
-│   │   └── ReviewCreateDTO.java          # 评价请求
+│   │   ├── ReviewCreateDTO.java          # 评价请求
+│   │   ├── RegisterDTO.java              # 注册请求
+│   │   ├── LoginDTO.java                 # 登录请求
+│   │   └── AuthResponse.java             # 登录/注册响应
 │   ├── repository/
 │   │   ├── UserRepository.java
 │   │   ├── CourseOrderRepository.java
 │   │   ├── ReviewRepository.java
 │   │   └── NotificationRepository.java
 │   ├── service/
+│   │   ├── AuthService.java
 │   │   ├── CourseOrderService.java
 │   │   ├── ReviewService.java
 │   │   └── NotificationService.java
 │   ├── service/impl/
-│   │   ├── CourseOrderServiceImpl.java    # 核心业务（含状态机+Redis缓存）
+│   │   ├── AuthServiceImpl.java           # 注册登录 + BCrypt
+│   │   ├── CourseOrderServiceImpl.java    # 核心业务（含状态机+Redis缓存+乐观锁）
 │   │   ├── ReviewServiceImpl.java
 │   │   └── NotificationServiceImpl.java
 │   └── controller/
+│       ├── AuthController.java            # 注册 / 登录 API
 │       ├── CourseOrderController.java     # 订单 RESTful API
 │       ├── ReviewController.java          # 评价 API
 │       └── NotificationController.java    # 通知 API
+├── src/test/java/com/campus/course/service/
+│   ├── CourseOrderServiceImplTest.java    # 状态机 + 并发接单测试
+│   ├── ReviewServiceImplTest.java         # 评价体系测试
+│   └── AuthServiceImplTest.java           # 注册登录 + 密码加密测试
 └── src/main/resources/
-    ├── application.yml                    # 应用配置
-    └── schema.sql                         # 建表脚本 + 示例数据
+    ├── application.yml                    # 应用配置（含 JWT）
+    └── schema.sql                         # 建表脚本 + 示例数据（BCrypt 密码）
 ```
 
 ## 快速启动
 
 ### 前置条件
-- JDK 11+
+- JDK 11 或 17（推荐 17）
 - MySQL 8.0
 - Redis 6.0+
 - Maven 3.6+
@@ -132,6 +159,16 @@ java -jar target/campus-course-platform-1.0.0.jar
 
 ## API 接口文档
 
+### 认证接口
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/auth/register` | 注册（返回 JWT） |
+| POST | `/api/auth/login` | 登录（返回 JWT） |
+
+> 除 `/api/auth/**` 外的所有接口都需要在请求头携带 `Authorization: Bearer <token>`。
+> 登录/注册成功后返回的 `token` 用于后续接口鉴权，服务端从 token 中解析用户身份，不再信任客户端传入的用户 ID。
+
 ### 订单接口
 
 | 方法 | 路径 | 说明 |
@@ -165,15 +202,30 @@ java -jar target/campus-course-platform-1.0.0.jar
 | PUT | `/api/notifications/{id}/read` | 标记已读 |
 | PUT | `/api/notifications/read-all` | 全部已读 |
 
-> 所有接口通过 `X-User-Id` 请求头传递当前用户ID（简化鉴权，生产环境请替换为 JWT）
+> 所有业务接口通过 JWT 鉴权，从 `Authorization: Bearer <token>` 中解析当前用户身份。
 
 ### 请求示例
 
-**发布代课需求：**
+**注册：**
+```bash
+curl -X POST http://localhost:8080/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"username": "zhangsan", "password": "123456", "phone": "13800001111"}'
+# 返回 { "code": 200, "data": { "token": "eyJhbGci...", "userId": 1, "username": "zhangsan" } }
+```
+
+**登录：**
+```bash
+curl -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "zhangsan", "password": "123456"}'
+```
+
+**发布代课需求（携带 token）：**
 ```bash
 curl -X POST http://localhost:8080/api/orders \
   -H "Content-Type: application/json" \
-  -H "X-User-Id: 1" \
+  -H "Authorization: Bearer <你的token>" \
   -d '{
     "courseName": "高等数学A",
     "courseCode": "MATH1001",
@@ -187,7 +239,13 @@ curl -X POST http://localhost:8080/api/orders \
 **接单：**
 ```bash
 curl -X PUT http://localhost:8080/api/orders/1/take \
-  -H "X-User-Id: 2"
+  -H "Authorization: Bearer <你的token>"
+```
+
+## 运行测试
+
+```bash
+mvn test
 ```
 
 ## License

@@ -1,5 +1,7 @@
 package com.campus.course.service.impl;
 
+import com.campus.course.common.BizException;
+import com.campus.course.common.ErrorCode;
 import com.campus.course.dto.ReviewCreateDTO;
 import com.campus.course.model.entity.CourseOrder;
 import com.campus.course.model.entity.Notification;
@@ -29,16 +31,17 @@ public class ReviewServiceImpl implements ReviewService {
     @Transactional
     public Review createReview(Long reviewerId, ReviewCreateDTO dto) {
         CourseOrder order = orderRepo.findById(dto.getOrderId())
-                .orElseThrow(() -> new RuntimeException("订单不存在"));
+                .orElseThrow(() -> new BizException(ErrorCode.ORDER_NOT_FOUND));
 
         // 只有已完成的订单才能评价
         if (order.getStatus() != OrderStatus.COMPLETED) {
-            throw new RuntimeException("订单状态为【" + order.getStatus().getDesc() + "】，无法评价");
+            throw new BizException(ErrorCode.REVIEW_NOT_ALLOWED,
+                    "订单状态为【" + order.getStatus().getDesc() + "】，无法评价");
         }
 
         // 防止重复评价
         if (reviewRepo.existsByOrderId(order.getId())) {
-            throw new RuntimeException("该订单已评价，不能重复评价");
+            throw new BizException(ErrorCode.REVIEW_DUPLICATED);
         }
 
         // 确定被评价者（发布者评价接单者，反之亦然）
@@ -48,7 +51,7 @@ public class ReviewServiceImpl implements ReviewService {
         } else if (reviewerId.equals(order.getTakerId())) {
             revieweeId = order.getPublisherId();
         } else {
-            throw new RuntimeException("无权评价此订单");
+            throw new BizException(ErrorCode.REVIEW_FORBIDDEN);
         }
 
         Review review = Review.builder()
